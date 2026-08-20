@@ -44,6 +44,25 @@ void tofs_setup();
 bool check_left_sensor();
 bool check_right_sensor();
 
+typedef struct {
+    /* Measured distance in mm */
+#ifndef VL53L7CX_DISABLE_DISTANCE_MM
+  int16_t distance_mm[(VL53L7CX_RESOLUTION_8X8
+                       *VL53L7CX_NB_TARGET_PER_ZONE)];
+#endif
+    /* Status indicating the measurement validity (5 & 9 means ranging OK)*/
+#ifndef VL53L7CX_DISABLE_TARGET_STATUS
+  uint8_t target_status[(VL53L7CX_RESOLUTION_8X8
+                         *VL53L7CX_NB_TARGET_PER_ZONE)];
+#endif
+} VL53L7CX_Measurement;
+
+bool left_sensor_ready();
+bool right_sensor_ready();
+
+VL53L7CX_Measurement* get_left_sensor_measurement();
+VL53L7CX_Measurement* get_right_sensor_measurement();
+
 #ifdef __cplusplus
 }
 #endif

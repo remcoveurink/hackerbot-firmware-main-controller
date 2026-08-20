@@ -31,7 +31,7 @@ Allen Chien - https://github.com/AllenChienXXX
 #include "SLAM_Base_Frames.h"
 
 // Main Controller software version
-#define VERSION_NUMBER 10
+#define VERSION_NUMBER 11
 
 // Set up the serial command processor
 SerialCmdHelper mySerCmd(Serial);
@@ -54,8 +54,8 @@ bool json_mode = false;
 
 unsigned long previousTofMillis = millis();
 bool read_left_tof_toggle = true;
-bool left_tof_obj_detected = false;
-bool right_tof_obj_detected = false;
+bool left_tof_obj_status = false;
+bool right_tof_obj_status = false;
 
 // Function prototypes
 void Get_Packet(byte response_packetid = 0x00, byte response_frame[] = nullptr, int sizeOfResponseFrame = 0);
@@ -115,6 +115,8 @@ void setup() {
   mySerCmd.AddCmd("VERSION", SERIALCMD_FROMALL, Get_Version);
   mySerCmd.AddCmd("JSON", SERIALCMD_FROMALL, Set_Json);
   mySerCmd.AddCmd("TOFS", SERIALCMD_FROMALL, Set_Tofs);
+  mySerCmd.AddCmd("B_TOFS", SERIALCMD_FROMALL, Get_Tofs);
+  mySerCmd.AddCmd("B_TEMP", SERIALCMD_FROMALL, Get_Temperature);
   mySerCmd.AddCmd("B_INIT", SERIALCMD_FROMALL, Send_Handshake);
   mySerCmd.AddCmd("B_MODE", SERIALCMD_FROMALL, Send_Mode);
   mySerCmd.AddCmd("B_START", SERIALCMD_FROMALL, Send_Start);
@@ -197,7 +199,7 @@ void loop() {
       unsigned long currentTofMillis = millis();
 
       if (currentTofMillis - previousTofMillis >= 125 && read_left_tof_toggle) {
-        left_tof_obj_detected = check_left_sensor();
+        left_tof_obj_status = left_sensor_ready();
         read_left_tof_toggle = false;
       }
 
@@ -205,18 +207,7 @@ void loop() {
         previousTofMillis = currentTofMillis;
         read_left_tof_toggle = true;
 
-        right_tof_obj_detected = check_right_sensor();
-
-        if (left_tof_obj_detected && right_tof_obj_detected) {
-          if (!json_mode) mySerCmd.Print((char *) "INFO: Both ToFs detect an obstacle\r\n");
-          ret = mySerCmd.ReadString((char *) "BUMP,1,1");
-        } else if (left_tof_obj_detected) {
-          if (!json_mode) mySerCmd.Print((char *) "INFO: Left ToF detects an obstacle\r\n");
-          ret = mySerCmd.ReadString((char *) "BUMP,0,1");
-        } else if (right_tof_obj_detected) {
-          if (!json_mode) mySerCmd.Print((char *) "INFO: Right ToF detects an obstacle\r\n");
-          ret = mySerCmd.ReadString((char *) "BUMP,1,0");
-        }
+        right_tof_obj_status = right_sensor_ready();
       }
     }
   }
@@ -249,6 +240,87 @@ void sendOK(void) {
   if (!json_mode) mySerCmd.Print((char *) "OK\r\n");
 }
 
+void Get_Tofs(void) {
+  int8_t j, k;
+  int8_t number_of_zones = VL53L7CX_RESOLUTION_4X4;
+  uint8_t zones_per_line = (number_of_zones == 16) ? 4 : 8;
+  JsonDocument json;
+  VL53L7CX_Measurement* left_measurement = get_left_sensor_measurement();
+  VL53L7CX_Measurement* right_measurement = get_right_sensor_measurement();
+
+  //TODO: maak JSON structuur om measurement terug te geven
+  // JSON output
+  if (json_mode) {
+    if (!left_tof_obj_status && !right_tof_obj_status) {
+      json["success"] = "false";
+      json["command"] = "TOF";
+      json["timestamp"] = previousTofMillis;
+    } else {
+      json["success"] = "true";
+      json["command"] = "TOF";
+      json["timestamp"] = previousTofMillis;
+    
+      for (j = 0; j < number_of_zones; j += zones_per_line) {
+        for (k = (zones_per_line - 1); k >= 0; k--) {
+          if (left_tof_obj_status) {
+            json["left"]["distance"][j+k] = left_measurement->distance_mm[j+k];
+            json["left"]["target_status"][j+k] = left_measurement->target_status[j+k];
+          }
+          if (right_tof_obj_status) {
+            json["right"]["distance"][j+k] = right_measurement->distance_mm[j+k];
+            json["right"]["target_status"][j+k] = right_measurement->target_status[j+k];
+          }
+        }
+      }
+    }
+    serializeJson(json, Serial);
+    Serial.println();
+    sendOK();
+  } else {
+    // TODO: implement response in plain text
+  }
+}
+
+// Reads the on-board NXP P3T1755 temperature sensor (I2C 0x4B)
+// Example - "TEMP"
+void Get_Temperature(void) {
+  JsonDocument json;
+ 
+  if (!temperature_sensor_attached) {
+    if (!json_mode) mySerCmd.Print((char *) "ERROR: Temperature sensor not attached\r\n");
+    if (json_mode) { json["success"]="false"; json["command"]="temp"; json["error"]="not attached";
+                     serializeJson(json, Serial); Serial.println(); }
+    return;
+  }
+ 
+  // P3T1755: pointer 0x00 = Temperature register (default after power-up), 2 bytes, MSB first
+  Wire.beginTransmission(TEMP_SENSOR_I2C_ADDRESS);
+  Wire.write(0x00);                                   // point at temperature register
+  Wire.endTransmission(false);                        // repeated start (keep bus)
+  Wire.requestFrom(TEMP_SENSOR_I2C_ADDRESS, 2);
+ 
+  if (Wire.available() < 2) {
+    if (!json_mode) mySerCmd.Print((char *) "ERROR: Temperature read failed\r\n");
+    return;
+  }
+ 
+  uint8_t msb = Wire.read();
+  uint8_t lsb = Wire.read();
+  int16_t raw = (int16_t)((msb << 8) | lsb);          // 12-bit value is left-justified
+  float tempC = (raw >> 4) * 0.0625f;                 // >>4 sign-extends; 0.0625 °C/LSB
+  float tempF = tempC * 9.0f / 5.0f + 32.0f;
+ 
+  if (!json_mode) {
+    char buf[64];
+    sprintf(buf, "INFO: Temperature = %.2f C (%.2f F)\r\n", tempC, tempF);
+    mySerCmd.Print(buf);
+  } else {
+    json["success"]="true"; json["command"]="temp";
+    json["temperature_c"]=tempC; json["temperature_f"]=tempF;
+    serializeJson(json, Serial); Serial.println();
+  }
+  sendOK();
+}
 
 // Sends pings out and listens for responses to see which hardware is attached to the main controller. Then sets the
 // approate flags to enable the associated functionality

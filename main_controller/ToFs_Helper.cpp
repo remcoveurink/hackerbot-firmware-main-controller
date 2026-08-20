@@ -176,8 +176,8 @@ bool compare_result(VL53L7CX *sensor, long calibration_values[]) {
 
   for (j = 0; j < number_of_zones; j += zones_per_line) {
     for (k = (zones_per_line - 1); k >= 0; k--) {
-      distance_value = (long)Result.distance_mm[j+k];
-      target_status = (long)Result.target_status[j+k];
+      distance_value = Result.distance_mm[j+k];
+      target_status = Result.target_status[j+k];
       compare_value = distance_value - calibration_values[j+k];
       if ((compare_value <= 0) && (distance_value != 0) && (target_status == 5)) {
         object_detected = 1;
@@ -252,4 +252,58 @@ bool check_right_sensor() {
   };*/
   
   return compare_result(&sensor_vl53l7cx_right, right_calibration_values);
+}
+
+
+VL53L7CX_Measurement left_sensor_measurement;
+VL53L7CX_Measurement right_sensor_measurement;
+
+bool sensor_ready(VL53L7CX *sensor, VL53L7CX_Measurement *measurement) {
+  VL53L7CX_ResultsData Result;
+  uint8_t NewDataReady = 0;
+  uint8_t status;
+  int8_t number_of_zones = VL53L7CX_RESOLUTION_4X4;
+  uint8_t zones_per_line = (number_of_zones == 16) ? 4 : 8;
+  int8_t j, k;
+ 
+  do {
+    status = sensor->vl53l7cx_check_data_ready(&NewDataReady);
+  } while (!NewDataReady);
+
+  if ((!status) && (NewDataReady != 0)) {
+    status = sensor->vl53l7cx_get_ranging_data(&Result);
+  } else {
+    return false;
+  }
+
+  for (j = 0; j < number_of_zones; j += zones_per_line) {
+    for (k = (zones_per_line - 1); k >= 0; k--) {
+      measurement->distance_mm[j+k] = (long)Result.distance_mm[j+k];
+      measurement->target_status[j+k] = (long)Result.target_status[j+k];
+    }
+  }
+  return true;
+}
+
+bool left_sensor_ready() {
+  if (tof_left_state != TOF_STATE_READY) {
+    return false;
+  }
+  return sensor_ready(&sensor_vl53l7cx_left, &left_sensor_measurement);
+}
+
+bool right_sensor_ready() {
+  if (tof_right_state != TOF_STATE_READY) {
+    return false;
+  }
+  return sensor_ready(&sensor_vl53l7cx_right, &right_sensor_measurement);
+}
+
+
+VL53L7CX_Measurement* get_left_sensor_measurement() {
+  return &left_sensor_measurement;
+}
+
+VL53L7CX_Measurement* get_right_sensor_measurement() {
+  return &right_sensor_measurement;
 }
