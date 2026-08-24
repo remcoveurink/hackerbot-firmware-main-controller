@@ -99,10 +99,6 @@ void setup() {
 
   Serial1.begin(230400);
 
-  // DON'T FORGET TO REMOVE THE DEBUG DELAY IN THE MAIN LOOP!!!!!!!!
-
-  delay(1000);
-
   if (!json_mode) mySerCmd.Print((char *) "INFO: Initalizing application...\r\n");
   if (!json_mode) mySerCmd.Print((char *) "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n");
 
@@ -111,6 +107,7 @@ void setup() {
   onboard_pixel.show();
 
   // Command Setup
+  mySerCmd.AddCmd("REBOOT", SERIALCMD_FROMALL, Set_Reboot);
   mySerCmd.AddCmd("PING", SERIALCMD_FROMALL, Send_Ping);
   mySerCmd.AddCmd("VERSION", SERIALCMD_FROMALL, Get_Version);
   mySerCmd.AddCmd("JSON", SERIALCMD_FROMALL, Set_Json);
@@ -159,11 +156,19 @@ void setup() {
   mySerCmd.AddCmd("A_ANGLE", SERIALCMD_FROMALL, set_A_ANGLE);
   mySerCmd.AddCmd("A_ANGLES", SERIALCMD_FROMALL, set_A_ANGLES);
 
+  // Change the on-board neopixel to red to indicate command setup is complete
+  onboard_pixel.setPixelColor(0, onboard_pixel.Color(10, 0, 0));
+  onboard_pixel.show();
+
   // Initialize I2C bus
   Wire.begin();
 
   // Scan for I2C devices (prevents the application from locking up if an accessory is missing)
   Send_Ping();
+
+  // Change the on-board neopixel to yellow to indicate I2C setup is complete
+  onboard_pixel.setPixelColor(0, onboard_pixel.Color(10, 10, 0));
+  onboard_pixel.show();
 
   // If attached, configure the time of flight sensors
   if (tofs_attached) {
@@ -236,6 +241,10 @@ void loop() {
 // -------------------------------------------------------
 // General SerialCmd Functions
 // -------------------------------------------------------
+void Set_Reboot(void) {
+  NVIC_SystemReset();
+}
+
 void sendOK(void) {
   if (!json_mode) mySerCmd.Print((char *) "OK\r\n");
 }
