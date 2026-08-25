@@ -100,6 +100,10 @@ void setup() {
 
   Serial1.begin(230400);
 
+  // DON'T FORGET TO REMOVE THE DEBUG DELAY IN THE MAIN LOOP!!!!!!!!
+
+  delay(1000);
+
   if (!json_mode) mySerCmd.Print((char *) "INFO: Initalizing application...\r\n");
   if (!json_mode) mySerCmd.Print((char *) "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n");
 
