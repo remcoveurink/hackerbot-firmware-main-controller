@@ -22,6 +22,7 @@ Allen Chien - https://github.com/AllenChienXXX
 #include <Wire.h>
 #include <SerialCmd.h>
 #include <Adafruit_NeoPixel.h>
+#include <Adafruit_SleepyDog.h>
 #include <ArduinoJson.h>
 #include <vl53l7cx_class.h>
 
@@ -103,7 +104,8 @@ void setup() {
   if (!json_mode) mySerCmd.Print((char *) "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n");
 
   onboard_pixel.begin();
-  onboard_pixel.setPixelColor(0, onboard_pixel.Color(0, 0, 10));
+  // Change the on-board neopixel to red to indicate setup start
+  onboard_pixel.setPixelColor(0, onboard_pixel.Color(10, 0, 0));
   onboard_pixel.show();
 
   // Command Setup
@@ -156,8 +158,8 @@ void setup() {
   mySerCmd.AddCmd("A_ANGLE", SERIALCMD_FROMALL, set_A_ANGLE);
   mySerCmd.AddCmd("A_ANGLES", SERIALCMD_FROMALL, set_A_ANGLES);
 
-  // Change the on-board neopixel to red to indicate command setup is complete
-  onboard_pixel.setPixelColor(0, onboard_pixel.Color(10, 0, 0));
+  // Change the on-board neopixel to blue to indicate command setup is complete
+  onboard_pixel.setPixelColor(0, onboard_pixel.Color(0, 0, 10));
   onboard_pixel.show();
 
   // Initialize I2C bus
@@ -175,6 +177,10 @@ void setup() {
     tofs_setup();
   }
 
+  // Change the on-board neopixel to ? to indicate I2C setup is complete
+  onboard_pixel.setPixelColor(0, onboard_pixel.Color(0, 10, 10));
+  onboard_pixel.show();
+
   // Flush the Serial1 rx buffer
   while (Serial1.available()) {
     Serial1.read();
@@ -183,6 +189,9 @@ void setup() {
   // Change the on-board neopixel to green to indicate setup is complete
   onboard_pixel.setPixelColor(0, onboard_pixel.Color(0, 10, 0));
   onboard_pixel.show();
+
+  // Start watchdog, e.g. ~30 seconds
+  Watchdog.enable(30000);
 
   if (!json_mode) mySerCmd.Print((char *) "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n");
   if (!json_mode) mySerCmd.Print((char *) "INFO: Starting application...\r\n");
@@ -235,6 +244,8 @@ void loop() {
     }
     Get_Packet();
   }
+  // Feed only when the whole loop completed successfully
+  Watchdog.reset();
 }
 
 
