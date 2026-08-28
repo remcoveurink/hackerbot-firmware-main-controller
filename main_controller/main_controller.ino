@@ -54,6 +54,7 @@ bool tofs_active = true;
 bool json_mode = false;
 
 unsigned long previousTofMillis = millis();
+unsigned long previousWatchdogMillis = millis();
 bool read_left_tof_toggle = true;
 bool left_tof_obj_status = false;
 bool right_tof_obj_status = false;
@@ -194,8 +195,8 @@ void setup() {
   onboard_pixel.setPixelColor(0, onboard_pixel.Color(0, 10, 0));
   onboard_pixel.show();
 
-  // Start watchdog, e.g. ~30 seconds
-  Watchdog.enable(30000);
+  // Start watchdog, e.g. ~16 seconds (maximum in hardware)
+  Watchdog.enable(16000);
 
   if (!json_mode) mySerCmd.Print((char *) "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n");
   if (!json_mode) mySerCmd.Print((char *) "INFO: Starting application...\r\n");
@@ -207,6 +208,7 @@ void setup() {
 // -------------------------------------------------------
 void loop() {
   int8_t ret;
+  unsigned long currentMillis = millis();
   
   // Read ToF sensor values and send a simulated bump command if an object is too close (only run if the
   // tof sensors are attached, ready, and >250 milliseconds have passed since the last BUMP command was sent).
@@ -214,15 +216,13 @@ void loop() {
   // overflowing. Status frames from the SLAM base robot come in every 10ms so it can fill up quickly.
   if (tofs_attached && tofs_active) {
     if (tof_left_state == TOF_STATE_READY && tof_right_state == TOF_STATE_READY) {
-      unsigned long currentTofMillis = millis();
-
-      if (currentTofMillis - previousTofMillis >= 125 && read_left_tof_toggle) {
+      if (currentMillis - previousTofMillis >= 125 && read_left_tof_toggle) {
         left_tof_obj_status = left_sensor_ready();
         read_left_tof_toggle = false;
       }
 
-      if (currentTofMillis - previousTofMillis >= 250) {
-        previousTofMillis = currentTofMillis;
+      if (currentMillis - previousTofMillis >= 250) {
+        previousTofMillis = currentMillis;
         read_left_tof_toggle = true;
 
         right_tof_obj_status = right_sensor_ready();
@@ -248,8 +248,12 @@ void loop() {
     }
     Get_Packet();
   }
-  // Feed only when the whole loop completed successfully
-  Watchdog.reset();
+  if (currentMillis - previousWatchdogMillis >= 15000) {
+    // Feed only when the timeout almost hits (1 second to spare)
+    // because otherwise it may be waiting for the previous synchronized WDT write to finish. 
+    // With the SAMD21 synchronization latency, a practical worst-case estimate is about 5–6 ms.
+    Watchdog.reset();
+  }
 }
 
 
